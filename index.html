@@ -1,0 +1,1009 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Graph Plotter</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=Jost:wght@400;500;600&display=swap">
+<style>
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0}
+/* Layout: one-screen board. Equation list on the left, plotting board fills the rest; on phones the board sits on top.
+   Palette: oxblood family #730c1e / #480415 / #210207 / #140f17, a single dark world by choice. */
+:root{
+  --bg:#140f17; --panel:#210207; --plot:#140f17; --wine:#480415; --crimson:#730c1e;
+  --line:#4f1226; --fg:#f6e7ea; --muted:#b3909a; --hover:#2b0610;
+  --accent:#ff6b86; --accent-fg:#210207; --danger:#ff8a9a;
+  --grid-minor:#2a1220; --grid-major:#46192d; --axis:#c9a0ab;
+  --c1:#ff6b86; --c2:#ffd3a4; --c3:#b9a4ff; --c4:#ff9d5c; --c5:#7ed9c4; --c6:#f6e7ea;
+  --ff-display:"Cormorant Garamond",Georgia,"Times New Roman",serif;
+  --ff-ui:"Jost",system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+  --ff-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{
+  margin:0; color:var(--fg); font:14.5px/1.5 var(--ff-ui);
+  background:var(--bg) radial-gradient(70% 60% at 6% 100%, rgba(115,12,30,.6), transparent 65%), radial-gradient(45% 40% at 100% 0%, rgba(72,4,21,.7), transparent 70%);
+  box-sizing:border-box; padding-block:12px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+}
+*{box-sizing:border-box}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.app{height:100%;display:grid;grid-template-columns:minmax(310px,390px) minmax(0,1fr);gap:12px}
+.panel{
+  min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;
+  background:var(--panel);border:1px solid var(--line);border-radius:16px;
+}
+.head{padding:16px 18px 14px;border-bottom:1px solid var(--line)}
+.eyebrow{font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:var(--muted)}
+.head h1{margin:4px 0 0;font:600 28px/1.1 var(--ff-display);letter-spacing:.07em}
+.head p{margin:6px 0 0;color:var(--muted);font-size:13px}
+.scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-color:var(--wine) transparent}
+
+.row{display:flex;align-items:flex-start;gap:10px;padding:8px 8px 8px 14px;border-bottom:1px solid var(--line)}
+.row:focus-within{background:var(--hover)}
+.swatch{
+  flex:none;width:24px;height:24px;margin-top:4px;border-radius:50%;padding:0;
+  border:2px solid var(--sw);background:var(--sw);
+}
+.swatch.off{background:transparent}
+.row.is-idle .swatch{opacity:.3;pointer-events:none}
+.field{flex:1;min-width:0}
+.field input{
+  display:block;width:100%;border:0;background:transparent;padding:6px 2px;
+  font-family:var(--ff-mono);font-size:15px;
+}
+.field input:focus{outline:none}
+.field input::placeholder{color:var(--muted);opacity:.75;font-family:var(--ff-ui);font-size:14px}
+.note{font-size:12px;color:var(--muted);padding:0 2px 4px}
+.note.err{color:var(--danger)}
+.del{
+  flex:none;width:28px;height:28px;margin-top:3px;border:0;border-radius:50%;background:transparent;color:var(--muted);
+  display:grid;place-items:center;padding:0;
+}
+.del:hover{background:var(--wine);color:var(--fg)}
+.add{
+  display:flex;align-items:center;gap:8px;width:100%;border:0;border-bottom:1px solid var(--line);
+  background:transparent;padding:11px 18px;color:var(--accent);font-weight:500;letter-spacing:.06em;text-align:start;
+}
+.add:hover{background:var(--hover)}
+
+.sect{padding:14px 18px;border-bottom:1px solid var(--line)}
+.sect h2{margin:0 0 8px;font-size:10.5px;font-weight:500;letter-spacing:.24em;text-transform:uppercase;color:var(--muted)}
+.prm{display:flex;align-items:center;gap:10px;padding:3px 0}
+.pname{flex:none;width:22px;font-family:var(--ff-mono);font-weight:500;text-align:center}
+.prm input[type=range]{flex:1;min-width:0;accent-color:var(--accent);margin:0}
+.pnum{
+  flex:none;width:72px;border:1px solid var(--line);background:var(--bg);border-radius:999px;
+  padding:3px 10px;font-family:var(--ff-mono);font-size:13px;
+}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{
+  border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:3px 11px;
+  font-family:var(--ff-mono);font-size:12.5px;
+}
+.chip:hover{border-color:var(--accent);color:var(--accent)}
+.keys{flex:none;display:flex;gap:6px;overflow-x:auto;padding:9px 12px;border-top:1px solid var(--line);background:var(--panel)}
+.keys .chip{flex:none;min-width:36px;text-align:center;padding:5px 10px}
+.ipts{max-height:170px;overflow-y:auto;font:500 12.5px/1.7 var(--ff-mono);font-variant-numeric:tabular-nums}
+.ipts div{display:flex;align-items:center;gap:8px}
+.ipts div::before{content:"";flex:none;width:7px;height:7px;border-radius:50%;background:var(--c6)}
+.ipts .none{color:var(--muted);font:400 13px var(--ff-ui)}
+.ipts .none::before{display:none}
+
+.board{position:relative;min-width:0;min-height:0;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--plot)}
+.board canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#ov{touch-action:none;cursor:crosshair}
+#ov.drag{cursor:grabbing}
+.tools{position:absolute;top:12px;inset-inline-end:12px;display:flex;flex-direction:column;gap:8px;z-index:2}
+.tools button{
+  width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--fg);
+  display:grid;place-items:center;padding:0;font-family:var(--ff-mono);font-size:11.5px;font-weight:500;
+}
+.tools button:hover{border-color:var(--accent);color:var(--accent)}
+.tools button.on{border-color:var(--accent);color:var(--accent);background:var(--wine)}
+.coords{
+  position:absolute;bottom:10px;inset-inline-start:12px;z-index:2;
+  font:500 12px var(--ff-mono);color:var(--muted);background:var(--panel);border:1px solid var(--line);
+  border-radius:999px;padding:3px 12px;font-variant-numeric:tabular-nums;pointer-events:none;white-space:pre;
+}
+
+@media (max-width:780px){
+  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(240px,1fr) auto}
+  .board{order:-1}
+  .panel{max-height:50vh}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+
+<div class="app" dir="ltr" lang="en">
+  <section class="panel" aria-label="Equations">
+    <div class="head">
+      <div class="eyebrow">Equation graphing</div>
+      <h1>Graph Plotter</h1>
+      <p>Type an equation and it plots instantly. Use x and y.</p>
+    </div>
+    <div class="scroll" id="scroll">
+      <div id="list"></div>
+      <button class="add" id="addBtn" type="button">
+        Add equation
+      </button>
+      <div class="sect" id="ptSect">
+        <h2>Intersections in view</h2>
+        <div class="ipts" id="ipts"></div>
+      </div>
+      <div class="sect" id="prmSect" hidden>
+        <h2>Variables · drag to animate</h2>
+        <div id="prmList"></div>
+      </div>
+    </div>
+    <div class="keys" id="keys" aria-label="Quick symbols"></div>
+  </section>
+
+  <section class="board" id="board" aria-label="Graph board">
+    <canvas id="cv"></canvas>
+    <canvas id="ov"></canvas>
+    <div class="tools">
+      <button type="button" id="zin" aria-label="Zoom in" title="Zoom in">add</button>
+      <button type="button" id="zout" aria-label="Zoom out" title="Zoom out"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 8h10"/></svg></button>
+      <button type="button" id="home" aria-label="Reset view" title="Reset view"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.5 9 3l6.5 5.5M4.5 7.5V15h9V7.5"/></svg></button>
+      <button type="button" id="xsec" class="on" aria-label="Show intersection points" aria-pressed="true" title="Show intersection points"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 15.5 15.5 2.5M2.5 2.5l13 13" opacity=".55"/><circle cx="9" cy="9" r="2.6" fill="currentColor" stroke="none"/></svg></button>
+      <button type="button" id="angle" aria-label="Angle unit" title="Angle unit: radians or degrees">rad</button>
+    </div>
+    <div class="coords" id="coords">x = 0   y = 0</div>
+  </section>
+</div>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const E = m => { const e = new Error(m); e.isMath = true; return e; };
+
+/* ---------- state ---------- */
+const params = {};          // name -> value
+const ranges = {};          // name -> [min, max]
+let angleK = 1;             // 1 = radians, PI/180 = degrees
+let showInter = true;
+let rows = [];
+let nextId = 1;
+let usedSet = new Set();
+const view = { cx: 0, cy: 0, s: 40 };
+let W = 300, H = 300, dpr = 1;
+let hover = null;
+
+const cv = $('#cv'), ov = $('#ov'), board = $('#board');
+const ctx = cv.getContext('2d'), octx = ov.getContext('2d');
+
+/* ---------- parsing ---------- */
+const pw = (b, e) => {
+  if (b < 0 && !Number.isInteger(e)) {
+    const q = 1 / e, r = Math.round(q);
+    if (Math.abs(q - r) < 1e-9 && r % 2 !== 0) return -Math.pow(-b, e);
+    return NaN;
+  }
+  return Math.pow(b, e);
+};
+const fact = v => {
+  if (v < 0 || !Number.isInteger(v) || v > 170) return NaN;
+  let r = 1; for (let i = 2; i <= v; i++) r *= i; return r;
+};
+const FUNCS = {
+  sin:[1, v => Math.sin(v * angleK)], cos:[1, v => Math.cos(v * angleK)], tan:[1, v => Math.tan(v * angleK)],
+  cot:[1, v => 1 / Math.tan(v * angleK)], sec:[1, v => 1 / Math.cos(v * angleK)], csc:[1, v => 1 / Math.sin(v * angleK)],
+  asin:[1, v => Math.asin(v) / angleK], acos:[1, v => Math.acos(v) / angleK], atan:[1, v => Math.atan(v) / angleK],
+  arcsin:[1, v => Math.asin(v) / angleK], arccos:[1, v => Math.acos(v) / angleK], arctan:[1, v => Math.atan(v) / angleK],
+  sinh:[1, Math.sinh], cosh:[1, Math.cosh], tanh:[1, Math.tanh],
+  sqrt:[1, Math.sqrt], cbrt:[1, Math.cbrt], abs:[1, Math.abs], ln:[1, Math.log], log:[1, Math.log10],
+  exp:[1, Math.exp], floor:[1, Math.floor], ceil:[1, Math.ceil], round:[1, Math.round], sign:[1, Math.sign],
+  fact:[1, fact],
+  min:[2, Math.min], max:[2, Math.max], pow:[2, pw], atan2:[2, (a, b) => Math.atan2(a, b) / angleK],
+  mod:[2, (a, b) => ((a % b) + b) % b]
+};
+const NAMES = [...Object.keys(FUNCS), 'pi', 'theta'].sort((a, b) => b.length - a.length);
+
+function normalize(s) {
+  const ar = '٠١٢٣٤٥٦٧٨٩', fa = '۰۱۲۳۴۵۶۷۸۹';
+  return s.replace(/[٠-٩]/g, d => ar.indexOf(d)).replace(/[۰-۹]/g, d => fa.indexOf(d))
+    .replace(/[×·]/g, '*').replace(/÷/g, '/').replace(/[−–—]/g, '-').replace(/[،]/g, ',').replace(/٫/g, '.')
+    .replace(/π/g, 'pi').replace(/θ/g, 'theta').replace(/√/g, 'sqrt ')
+    .replace(/²/g, '^2').replace(/³/g, '^3').replace(/≤/g, '<=').replace(/≥/g, '>=').replace(/\*\*/g, '^')
+    .toLowerCase().replace(/plus/g, '+').replace(/minus/g, '-').replace(/times/g, '*');
+}
+
+function tokenize(s) {
+  const out = []; let i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (c === ' ' || c === '\t') { i++; continue; }
+    if ((c >= '0' && c <= '9') || c === '.') {
+      const m = /^(?:\d+\.?\d*|\.\d+)/.exec(s.slice(i));
+      if (!m) throw E('Decimal point in the wrong place');
+      out.push({ t: 'num', v: parseFloat(m[0]) }); i += m[0].length; continue;
+    }
+    if (c >= 'a' && c <= 'z') {
+      const name = NAMES.find(n => s.startsWith(n, i)) || c;
+      out.push({ t: 'id', n: name }); i += name.length; continue;
+    }
+    if ('+-*/^(),!'.includes(c)) { out.push({ t: c }); i++; continue; }
+    if (c === '<' || c === '>') {
+      if (s[i + 1] === '=') { out.push({ t: 'rel', v: c + '=' }); i += 2; } else { out.push({ t: 'rel', v: c }); i++; }
+      continue;
+    }
+    if (c === '=') { out.push({ t: 'rel', v: '=' }); i += s[i + 1] === '=' ? 2 : 1; continue; }
+    throw E('Unrecognized character “' + c + '”');
+  }
+  return out;
+}
+
+function parse(toks) {
+  if (!toks.length) throw E('Incomplete expression');
+  let i = 0;
+  const peek = () => toks[i], next = () => toks[i++];
+  const startsPrimary = tk => tk && (tk.t === 'num' || tk.t === 'id' || tk.t === '(');
+
+  function addsub() {
+    let a = muldiv();
+    while (peek() && (peek().t === '+' || peek().t === '-')) {
+      const op = next().t; a = { t: 'bin', op, a, b: muldiv() };
+    }
+    return a;
+  }
+  function muldiv() {
+    let a = unary();
+    for (;;) {
+      const tk = peek();
+      if (!tk) break;
+      if (tk.t === '*' || tk.t === '/') { next(); a = { t: 'bin', op: tk.t, a, b: unary() }; }
+      else if (startsPrimary(tk)) a = { t: 'bin', op: '*', a, b: power() };
+      else break;
+    }
+    return a;
+  }
+  function unary() {
+    const tk = peek();
+    if (tk && tk.t === '-') { next(); return { t: 'neg', a: unary() }; }
+    if (tk && tk.t === '+') { next(); return unary(); }
+    return power();
+  }
+  function power() {
+    const base = postfix();
+    if (peek() && peek().t === '^') { next(); return { t: 'bin', op: '^', a: base, b: unary() }; }
+    return base;
+  }
+  function postfix() {
+    let a = primary();
+    while (peek() && peek().t === '!') { next(); a = { t: 'fn', n: 'fact', args: [a] }; }
+    return a;
+  }
+  function primary() {
+    const tk = next();
+    if (!tk) throw E('Incomplete expression, it ends too early');
+    if (tk.t === 'num') return { t: 'num', v: tk.v };
+    if (tk.t === '(') {
+      const e = addsub();
+      if (!peek() || peek().t !== ')') throw E('Missing closing parenthesis )');
+      next(); return e;
+    }
+    if (tk.t === 'id') {
+      const n = tk.n;
+      if (FUNCS[n]) {
+        let args;
+        if (peek() && peek().t === '(') {
+          next(); args = [addsub()];
+          while (peek() && peek().t === ',') { next(); args.push(addsub()); }
+          if (!peek() || peek().t !== ')') throw E('Missing closing parenthesis after ' + n);
+          next();
+        } else args = [unary()];
+        if (args.length !== FUNCS[n][0]) throw E(n + ' needs ' + (FUNCS[n][0] === 1 ? 'one value' : 'two values'));
+        return { t: 'fn', n, args };
+      }
+      if (n === 'pi') return { t: 'num', v: Math.PI };
+      if (n === 'e') return { t: 'num', v: Math.E };
+      return { t: 'var', n };
+    }
+    if (tk.t === ')') throw E('Extra closing parenthesis');
+    if (tk.t === ',') throw E('Misplaced comma');
+    throw E('Unexpected symbol “' + tk.t + '”');
+  }
+  const r = addsub();
+  if (i < toks.length) {
+    const tk = toks[i];
+    throw E(tk.t === ')' ? 'Extra closing parenthesis' : 'Could not understand the last part of the equation');
+  }
+  return r;
+}
+
+function vars(n, set = new Set()) {
+  if (n.t === 'var') set.add(n.n);
+  else if (n.t === 'bin') { vars(n.a, set); vars(n.b, set); }
+  else if (n.t === 'neg') vars(n.a, set);
+  else if (n.t === 'fn') n.args.forEach(a => vars(a, set));
+  return set;
+}
+
+function ensureParam(n) {
+  if (!(n in params)) { params[n] = 1; ranges[n] = [-10, 10]; }
+}
+
+function compile(n, vm) {
+  switch (n.t) {
+    case 'num': { const v = n.v; return () => v; }
+    case 'var': {
+      if (n.n in vm) return vm[n.n] === 0 ? (a => a) : ((a, b) => b);
+      const name = n.n; usedSet.add(name); ensureParam(name);
+      return () => params[name];
+    }
+    case 'neg': { const A = compile(n.a, vm); return (p, q) => -A(p, q); }
+    case 'bin': {
+      const A = compile(n.a, vm), B = compile(n.b, vm);
+      switch (n.op) {
+        case '+': return (p, q) => A(p, q) + B(p, q);
+        case '-': return (p, q) => A(p, q) - B(p, q);
+        case '*': return (p, q) => A(p, q) * B(p, q);
+        case '/': return (p, q) => A(p, q) / B(p, q);
+        default: return (p, q) => pw(A(p, q), B(p, q));
+      }
+    }
+    case 'fn': {
+      const f = FUNCS[n.n][1], A = compile(n.args[0], vm);
+      if (n.args.length === 1) return (p, q) => f(A(p, q));
+      const B = compile(n.args[1], vm);
+      return (p, q) => f(A(p, q), B(p, q));
+    }
+  }
+}
+
+function analyze(text) {
+  usedSet = new Set();
+  const src = normalize(text).trim();
+  if (!src) return { kind: 'empty' };
+  const toks = tokenize(src);
+  const rels = toks.filter(t => t.t === 'rel');
+  if (rels.length > 1) throw E('Only one comparison sign is allowed');
+  const ri = toks.findIndex(t => t.t === 'rel');
+  let L, R = null, op = null;
+  if (ri < 0) L = parse(toks);
+  else { L = parse(toks.slice(0, ri)); R = parse(toks.slice(ri + 1)); op = toks[ri].v; }
+  const vl = vars(L), vr = R ? vars(R) : new Set();
+  const isVar = (n, name) => n.t === 'var' && n.n === name;
+
+  if (!R) {
+    if (vl.has('y')) throw E('Add an = sign to make an equation, e.g. y = ...');
+    return { kind: 'explicit', f: compile(L, { x: 0 }) };
+  }
+  if (op === '=') {
+    if (isVar(L, 'y') && !vr.has('y')) return { kind: 'explicit', f: compile(R, { x: 0 }) };
+    if (isVar(L, 'x') && !vr.has('x')) return { kind: 'vertical', f: compile(R, { y: 0 }) };
+    if (isVar(L, 'r') && !vr.has('r')) {
+      if (vr.has('x') || vr.has('y')) throw E('Polar equations use θ only, not x or y');
+      return { kind: 'polar', f: compile(R, { theta: 0, t: 0 }) };
+    }
+    if (L.t === 'var' && L.n !== 'x' && L.n !== 'y' && L.n !== 'theta' && !vr.has('x') && !vr.has('y')) {
+      const v = compile(R, {})();
+      if (!isFinite(v)) throw E('Invalid variable value');
+      return { kind: 'param', name: L.n, value: v };
+    }
+  }
+  if (!(vl.has('x') || vl.has('y') || vr.has('x') || vr.has('y'))) throw E('The equation has no x or y');
+  const Fl = compile(L, { x: 0, y: 1 }), Fr = compile(R, { x: 0, y: 1 });
+  return { kind: op === '=' ? 'implicit' : 'ineq', F: (a, b) => Fl(a, b) - Fr(a, b), op };
+}
+
+/* ---------- rows ---------- */
+function mkRow(text = '', color) {
+  return { id: nextId++, text, color: color ?? 0, visible: true, parsed: { kind: 'empty' }, used: [], error: null };
+}
+function analyzeRow(r) {
+  try {
+    const p = analyze(r.text);
+    r.parsed = p; r.used = [...usedSet]; r.error = null;
+    if (p.kind === 'param') { params[p.name] = p.value; ranges[p.name] = ranges[p.name] || [-10, 10]; fitRange(p.name); }
+  } catch (e) {
+    r.parsed = null; r.used = [];
+    r.error = e.isMath ? e.message : 'Could not understand this equation';
+  }
+}
+function fitRange(n) {
+  const v = params[n]; let [lo, hi] = ranges[n] || [-10, 10];
+  if (v < lo || v > hi) { const m = Math.max(10, Math.ceil(Math.abs(v) * 1.5 / 10) * 10); ranges[n] = [-m, m]; }
+}
+
+const list = $('#list');
+let lastInput = null;
+const errTimers = {};
+
+function syncNote(r, el) {
+  const note = el.querySelector('.note');
+  const k = r.parsed && r.parsed.kind;
+  el.classList.toggle('is-idle', k === 'empty' || k === 'param' || !r.parsed);
+  clearTimeout(errTimers[r.id]);
+  if (r.error) {
+    note.hidden = true;
+    errTimers[r.id] = setTimeout(() => { note.textContent = r.error; note.className = 'note err'; note.hidden = false; }, 700);
+  } else if (k === 'param') {
+    note.textContent = 'Variable ' + r.parsed.name + ' is ready. Move it in the Variables section.';
+    note.className = 'note'; note.hidden = false;
+  } else note.hidden = true;
+}
+
+function renderRows(focusId) {
+  list.textContent = '';
+  rows.forEach((r, idx) => {
+    const el = document.createElement('div'); el.className = 'row'; el.dataset.id = r.id;
+    const sw = document.createElement('button'); sw.type = 'button';
+    sw.className = 'swatch' + (r.visible ? '' : ' off'); sw.style.setProperty('--sw', 'var(--c' + (r.color + 1) + ')');
+    sw.setAttribute('aria-label', 'Show or hide curve'); sw.setAttribute('aria-pressed', String(r.visible));
+    sw.onclick = () => { r.visible = !r.visible; sw.classList.toggle('off', !r.visible); sw.setAttribute('aria-pressed', String(r.visible)); requestDraw(); save(); };
+
+    const field = document.createElement('div'); field.className = 'field';
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.value = r.text; inp.spellcheck = false; inp.autocomplete = 'off'; inp.autocapitalize = 'off';
+    inp.setAttribute('autocorrect', 'off'); inp.setAttribute('enterkeyhint', 'next');
+    inp.placeholder = 'Type an equation, e.g. y = sin(x)'; inp.id = 'in-' + r.id;
+    inp.setAttribute('aria-label', 'Equation ' + (idx + 1));
+    const note = document.createElement('div'); note.className = 'note'; note.hidden = true;
+    field.append(inp, note);
+
+    const del = document.createElement('button'); del.type = 'button'; del.className = 'del';
+    del.setAttribute('aria-label', 'Delete equation');
+    del.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg>';
+    del.onclick = () => removeRow(r.id);
+
+    inp.addEventListener('focus', () => { lastInput = inp; });
+    inp.addEventListener('input', () => {
+      r.text = inp.value; analyzeRow(r); syncNote(r, el); renderParams(); requestDraw(true); save();
+    });
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); addRow('', idx + 1); }
+      else if (e.key === 'Backspace' && inp.value === '' && rows.length > 1) { e.preventDefault(); removeRow(r.id, true); }
+      else if (e.key === 'ArrowDown' && list.children[idx + 1]) { e.preventDefault(); list.children[idx + 1].querySelector('input').focus(); }
+      else if (e.key === 'ArrowUp' && list.children[idx - 1]) { e.preventDefault(); list.children[idx - 1].querySelector('input').focus(); }
+    });
+    el.append(sw, field, del); list.append(el);
+    syncNote(r, el);
+  });
+  if (focusId != null) { const f = $('#in-' + focusId); if (f) f.focus(); }
+}
+
+function addRow(text = '', at = rows.length) {
+  const r = mkRow(text, 0);
+  usedColor(r);
+  analyzeRow(r);
+  rows.splice(at, 0, r);
+  renderRows(r.id); renderParams(); requestDraw(); save();
+  return r;
+}
+function usedColor(r) {
+  const taken = new Set(rows.map(x => x.color));
+  for (let i = 0; i < 6; i++) { const c = (r.color + i) % 6; if (!taken.has(c)) { r.color = c; return; } }
+}
+function removeRow(id, focusPrev) {
+  const idx = rows.findIndex(r => r.id === id);
+  if (idx < 0) return;
+  rows.splice(idx, 1);
+  if (!rows.length) rows.push(mkRow('', 0));
+  renderRows(focusPrev ? rows[Math.max(0, idx - 1)].id : null);
+  renderParams(); requestDraw(); save();
+}
+
+/* ---------- parameter sliders ---------- */
+let prmKey = '';
+function paramNames() {
+  const s = new Set();
+  rows.forEach(r => { r.used.forEach(n => s.add(n)); if (r.parsed && r.parsed.kind === 'param') s.add(r.parsed.name); });
+  return [...s].sort();
+}
+const fmtP = v => String(parseFloat(v.toFixed(3)));
+function renderParams() {
+  const names = paramNames(), key = names.join(',');
+  $('#prmSect').hidden = names.length === 0;
+  if (key === prmKey) return;
+  prmKey = key;
+  const box = $('#prmList'); box.textContent = '';
+  names.forEach(n => {
+    const [lo, hi] = ranges[n];
+    const d = document.createElement('div'); d.className = 'prm';
+    const lab = document.createElement('label'); lab.className = 'pname'; lab.textContent = n; lab.htmlFor = 'pr-' + n;
+    const rg = document.createElement('input'); rg.type = 'range'; rg.id = 'pr-' + n;
+    rg.min = lo; rg.max = hi; rg.step = (hi - lo) >= 200 ? 0.1 : 0.01; rg.value = params[n];
+    const nm = document.createElement('input'); nm.type = 'number'; nm.className = 'pnum'; nm.step = 'any'; nm.value = fmtP(params[n]);
+    nm.setAttribute('aria-label', 'Value of ' + n);
+    rg.addEventListener('input', () => { params[n] = parseFloat(rg.value); nm.value = fmtP(params[n]); requestDraw(true); save(); });
+    nm.addEventListener('input', () => {
+      const v = parseFloat(nm.value); if (!isFinite(v)) return;
+      params[n] = v; fitRange(n); const [a, b] = ranges[n]; rg.min = a; rg.max = b; rg.value = v;
+      requestDraw(true); save();
+    });
+    d.append(lab, rg, nm); box.append(d);
+  });
+}
+
+/* ---------- view math ---------- */
+const toX = x => W / 2 + (x - view.cx) * view.s;
+const toY = y => H / 2 - (y - view.cy) * view.s;
+const fromX = px => (px - W / 2) / view.s + view.cx;
+const fromY = py => view.cy - (py - H / 2) / view.s;
+const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
+const BIG = 1e5;
+
+function niceStep(t) {
+  const p = Math.pow(10, Math.floor(Math.log10(t))), m = t / p;
+  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p;
+}
+function fmtTick(v, step) {
+  if (Math.abs(v) < step * 1e-9) return '0';
+  const a = Math.abs(v);
+  let s;
+  if (a >= 1e7 || a < 1e-5) s = v.toExponential(0).replace('e+', 'e');
+  else s = v.toFixed(clampN(-Math.floor(Math.log10(step) + 1e-9), 0, 10));
+  return s.replace('-', '−');
+}
+const fmtNum = v => String(parseFloat(v.toPrecision(4))).replace('-', '−');
+const fmtPrecise = v => String(parseFloat(v.toPrecision(7))).replace('-', '−');
+
+function readTheme() {
+  const cs = getComputedStyle(document.documentElement), g = n => cs.getPropertyValue(n).trim();
+  return { plot: g('--plot'), minor: g('--grid-minor'), major: g('--grid-major'), axis: g('--axis'), muted: g('--muted'),
+    fg: g('--fg'), panel: g('--panel'), line: g('--line'), accent: g('--accent'), wine: g('--wine'), crimson: g('--crimson'),
+    c: [1, 2, 3, 4, 5, 6].map(i => g('--c' + i)) };
+}
+
+/* ---------- drawing ---------- */
+let needDraw = false, interacting = false, idleTimer = 0;
+function requestDraw(fast) {
+  if (fast) {
+    interacting = true; clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => { interacting = false; requestDraw(); }, 180);
+  }
+  if (!needDraw) { needDraw = true; requestAnimationFrame(draw); }
+}
+
+function drawGrid(th) {
+  const step = niceStep(85 / view.s);
+  const pwr = Math.pow(10, Math.floor(Math.log10(step)));
+  const mant = Math.round(step / pwr);
+  const minor = step / (mant === 2 ? 4 : 5);
+  const xmin = fromX(0), xmax = fromX(W), ymax = fromY(0), ymin = fromY(H);
+
+  const lines = (stepV, color) => {
+    ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.beginPath();
+    const k0 = Math.ceil(xmin / stepV), k1 = Math.floor(xmax / stepV);
+    if (k1 - k0 < 800) for (let k = k0; k <= k1; k++) { const x = Math.round(toX(k * stepV)) + 0.5; ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+    const j0 = Math.ceil(ymin / stepV), j1 = Math.floor(ymax / stepV);
+    if (j1 - j0 < 800) for (let k = j0; k <= j1; k++) { const y = Math.round(toY(k * stepV)) + 0.5; ctx.moveTo(0, y); ctx.lineTo(W, y); }
+    ctx.stroke();
+  };
+  lines(minor, th.minor);
+  lines(step, th.major);
+
+  const ax = toX(0), ay = toY(0);
+  ctx.strokeStyle = th.axis; ctx.lineWidth = 1.5; ctx.beginPath();
+  if (ax >= 0 && ax <= W) { ctx.moveTo(Math.round(ax) + 0.5, 0); ctx.lineTo(Math.round(ax) + 0.5, H); }
+  if (ay >= 0 && ay <= H) { ctx.moveTo(0, Math.round(ay) + 0.5); ctx.lineTo(W, Math.round(ay) + 0.5); }
+  ctx.stroke();
+
+  ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
+  ctx.fillStyle = th.muted; ctx.strokeStyle = th.plot; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+  const label = (txt, x, y) => { ctx.strokeText(txt, x, y); ctx.fillText(txt, x, y); };
+  const ly = clampN(ay + 5, 4, H - 18);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (let k = Math.ceil(xmin / step); k <= Math.floor(xmax / step); k++) {
+    if (k === 0) continue;
+    const px = toX(k * step); if (px < 14 || px > W - 14) continue;
+    label(fmtTick(k * step, step), px, ly);
+  }
+  const lx = clampN(ax - 7, 44, W - 6);
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let k = Math.ceil(ymin / step); k <= Math.floor(ymax / step); k++) {
+    if (k === 0) continue;
+    const py = toY(k * step); if (py < 10 || py > H - 10) continue;
+    label(fmtTick(k * step, step), lx, py);
+  }
+  if (ax > 0 && ax < W && ay > 0 && ay < H) { ctx.textAlign = 'right'; ctx.textBaseline = 'top'; label('0', ax - 7, ay + 5); }
+}
+
+function drawExplicit(f) {
+  ctx.beginPath();
+  let pen = false, py0 = 0, y0 = 0;
+  for (let px = -1; px <= W + 1; px += 0.5) {
+    const y = f(fromX(px));
+    if (!isFinite(y)) { pen = false; continue; }
+    const py = clampN(toY(y), -BIG, H + BIG);
+    if (pen && Math.sign(y) !== Math.sign(y0) && Math.abs(py - py0) > H) pen = false;
+    if (!pen) { ctx.moveTo(px, py); pen = true; } else ctx.lineTo(px, py);
+    py0 = py; y0 = y;
+  }
+  ctx.stroke();
+}
+function drawVertical(g) {
+  ctx.beginPath();
+  let pen = false, px0 = 0, x0 = 0;
+  for (let py = -1; py <= H + 1; py += 0.5) {
+    const x = g(fromY(py));
+    if (!isFinite(x)) { pen = false; continue; }
+    const px = clampN(toX(x), -BIG, W + BIG);
+    if (pen && Math.sign(x) !== Math.sign(x0) && Math.abs(px - px0) > W) pen = false;
+    if (!pen) { ctx.moveTo(px, py); pen = true; } else ctx.lineTo(px, py);
+    px0 = px; x0 = x;
+  }
+  ctx.stroke();
+}
+function drawPolar(f) {
+  ctx.beginPath();
+  const N = 7000, T = 8 * Math.PI; let pen = false;
+  for (let i = 0; i <= N; i++) {
+    const t = T * i / N, r = f(t / angleK);
+    if (!isFinite(r)) { pen = false; continue; }
+    const x = clampN(toX(r * Math.cos(t)), -BIG, BIG), y = clampN(toY(r * Math.sin(t)), -BIG, BIG);
+    if (!pen) { ctx.moveTo(x, y); pen = true; } else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+function drawImplicit(F, op, color) {
+  let cell = interacting ? 6 : 3;
+  cell = Math.max(cell, Math.ceil(Math.sqrt(W * H / 170000)));
+  const nx = Math.ceil(W / cell) + 1, ny = Math.ceil(H / cell) + 1;
+  const v = new Float64Array(nx * ny);
+  for (let j = 0; j < ny; j++) {
+    const y = fromY(j * cell);
+    for (let i = 0; i < nx; i++) v[j * nx + i] = F(fromX(i * cell), y);
+  }
+  if (op && op !== '=') {
+    const gt = op[0] === '>';
+    ctx.save(); ctx.globalAlpha = 0.18; ctx.fillStyle = color;
+    for (let j = 0; j < ny - 1; j++) {
+      let start = -1;
+      for (let i = 0; i <= nx - 1; i++) {
+        let on = false;
+        if (i < nx - 1) {
+          const m = (v[j * nx + i] + v[j * nx + i + 1] + v[(j + 1) * nx + i] + v[(j + 1) * nx + i + 1]) / 4;
+          on = isFinite(m) && (gt ? m > 0 : m < 0);
+        }
+        if (on && start < 0) start = i;
+        if (!on && start >= 0) { ctx.fillRect(start * cell, j * cell, (i - start) * cell, cell + 0.6); start = -1; }
+      }
+    }
+    ctx.restore();
+    if (op.length === 1) ctx.setLineDash([7, 5]);
+  }
+  ctx.beginPath();
+  const seg = (p, q) => { ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); };
+  for (let j = 0; j < ny - 1; j++) {
+    for (let i = 0; i < nx - 1; i++) {
+      const a = v[j * nx + i], b = v[j * nx + i + 1], d = v[(j + 1) * nx + i], c = v[(j + 1) * nx + i + 1];
+      if (!(isFinite(a) && isFinite(b) && isFinite(c) && isFinite(d))) continue;
+      const sa = a > 0, sb = b > 0, sc = c > 0, sd = d > 0;
+      if (sa === sb && sb === sc && sc === sd) continue;
+      const x0 = i * cell, y0 = j * cell;
+      const T = sa !== sb ? [x0 + cell * a / (a - b), y0] : null;
+      const R = sb !== sc ? [x0 + cell, y0 + cell * b / (b - c)] : null;
+      const B = sd !== sc ? [x0 + cell * d / (d - c), y0 + cell] : null;
+      const L = sa !== sd ? [x0, y0 + cell * a / (a - d)] : null;
+      const pts = [T, R, B, L].filter(Boolean);
+      if (pts.length === 2) seg(pts[0], pts[1]);
+      else if (pts.length === 4) {
+        if (((a + b + c + d) / 4 > 0) === sa) { seg(T, R); seg(B, L); } else { seg(T, L); seg(R, B); }
+      }
+    }
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+/* ---------- intersections (curve/curve and curve/axis), solved with Newton's method ---------- */
+function solve2(Ga, Gb, x, y) {
+  const h = Math.max(1e-9, 1e-3 / view.s);
+  for (let it = 0; it < 40; it++) {
+    const fa = Ga(x, y), fb = Gb(x, y);
+    if (!isFinite(fa) || !isFinite(fb)) return null;
+    const ax = (Ga(x + h, y) - fa) / h, ay = (Ga(x, y + h) - fa) / h;
+    const bx = (Gb(x + h, y) - fb) / h, by = (Gb(x, y + h) - fb) / h;
+    const det = ax * by - ay * bx;
+    if (!isFinite(det) || det === 0) return null;
+    let dx = (-fa * by + fb * ay) / det, dy = (-ax * fb + bx * fa) / det;
+    const m = Math.hypot(dx, dy), maxStep = 12 / view.s;
+    if (!isFinite(m)) return null;
+    if (m > maxStep) { dx *= maxStep / m; dy *= maxStep / m; }
+    x += dx; y += dy;
+    if (m < 1e-13 * (1 + Math.abs(x) + Math.abs(y))) break;
+  }
+  const tol = 1e-6 * Math.pow(1 + Math.abs(x) + Math.abs(y), 2);
+  const ra = Ga(x, y), rb = Gb(x, y);
+  if (!(Math.abs(ra) < tol && Math.abs(rb) < tol)) return null;
+  return [x, y];
+}
+
+function findIntersections() {
+  const curves = [];
+  rows.forEach(r => {
+    if (!r.visible || !r.parsed) return;
+    const p = r.parsed;
+    if (p.kind === 'explicit') curves.push({ G: (x, y) => y - p.f(x) });
+    else if (p.kind === 'vertical') curves.push({ G: (x, y) => x - p.f(y) });
+    else if (p.kind === 'implicit' || p.kind === 'ineq') curves.push({ G: p.F });
+  });
+  if (curves.length > 12) curves.length = 12;
+  const nUser = curves.length;
+  curves.push({ G: (x, y) => y, axis: true }, { G: (x, y) => x, axis: true });
+  if (nUser === 0) return [];
+
+  const cell = 5, nx = Math.ceil(W / cell) + 1, ny = Math.ceil(H / cell) + 1;
+  curves.forEach(c => {
+    const v = new Float64Array(nx * ny);
+    for (let j = 0; j < ny; j++) { const y = fromY(j * cell); for (let i = 0; i < nx; i++) v[j * nx + i] = c.G(fromX(i * cell), y); }
+    const chg = new Uint8Array((nx - 1) * (ny - 1));
+    for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
+      const a = v[j * nx + i], b = v[j * nx + i + 1], d = v[(j + 1) * nx + i], e = v[(j + 1) * nx + i + 1];
+      if (!(isFinite(a) && isFinite(b) && isFinite(d) && isFinite(e))) continue;
+      const s = a > 0; if (s !== (b > 0) || s !== (d > 0) || s !== (e > 0)) chg[j * (nx - 1) + i] = 1;
+    }
+    c.chg = chg;
+  });
+
+  const found = [], cw = cell / view.s;
+  for (let a = 0; a < curves.length && found.length < 80; a++) {
+    for (let b = a + 1; b < curves.length; b++) {
+      if (curves[a].axis && curves[b].axis) continue;
+      const ca = curves[a].chg, cb = curves[b].chg;
+      for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
+        const k = j * (nx - 1) + i;
+        if (!ca[k] || !cb[k]) continue;
+        const x0 = fromX((i + 0.5) * cell), y0 = fromY((j + 0.5) * cell);
+        const s = solve2(curves[a].G, curves[b].G, x0, y0);
+        if (!s) continue;
+        if (Math.abs(s[0] - x0) > 1.6 * cw || Math.abs(s[1] - y0) > 1.6 * cw) continue;
+        const sx = toX(s[0]), sy = toY(s[1]);
+        if (found.some(f => Math.abs(toX(f[0]) - sx) < 3 && Math.abs(toY(f[1]) - sy) < 3)) continue;
+        found.push([Math.abs(s[0]) < 1e-9 ? 0 : s[0], Math.abs(s[1]) < 1e-9 ? 0 : s[1]]);
+      }
+    }
+  }
+  return found.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+}
+
+function drawIntersections(th, pts) {
+  const vis = pts.filter(p => { const x = toX(p[0]), y = toY(p[1]); return x > -5 && x < W + 5 && y > -5 && y < H + 5; });
+  vis.forEach(p => {
+    ctx.beginPath(); ctx.arc(toX(p[0]), toY(p[1]), 5, 0, Math.PI * 2);
+    ctx.fillStyle = th.c[5]; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = th.plot; ctx.stroke();
+  });
+  ctx.font = '500 11.5px "IBM Plex Mono", ui-monospace, monospace';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  const placed = [], bh = 20;
+  vis.forEach(p => {
+    const sx = toX(p[0]), sy = toY(p[1]);
+    const txt = '(' + fmtNum(p[0]) + ', ' + fmtNum(p[1]) + ')';
+    const tw = ctx.measureText(txt).width + 14;
+    const cands = [[10, -bh - 6], [10, 6], [-tw - 10, -bh - 6], [-tw - 10, 6]];
+    for (const [ox, oy] of cands) {
+      const bx = sx + ox, by = sy + oy;
+      if (bx < 4 || by < 4 || bx + tw > W - 4 || by + bh > H - 4) continue;
+      if (placed.some(r => bx < r[0] + r[2] && bx + tw > r[0] && by < r[1] + r[3] && by + bh > r[1])) continue;
+      placed.push([bx, by, tw, bh]);
+      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx, by, tw, bh, 10) : ctx.rect(bx, by, tw, bh);
+      ctx.fillStyle = th.panel; ctx.fill(); ctx.lineWidth = 1.2; ctx.strokeStyle = th.accent; ctx.stroke();
+      ctx.fillStyle = th.fg; ctx.fillText(txt, bx + 7, by + bh / 2 + 0.5);
+      break;
+    }
+  });
+}
+
+let lastPtKey = null;
+function updateIntersectionList(pts) {
+  const key = showInter ? pts.map(p => p.join(',')).join('|') : 'off';
+  if (key === lastPtKey) return;
+  lastPtKey = key;
+  const box = $('#ipts'); box.textContent = '';
+  if (!showInter) { const d = document.createElement('div'); d.className = 'none'; d.textContent = 'Hidden. Turn on the intersection button on the board.'; box.append(d); return; }
+  if (!pts.length) { const d = document.createElement('div'); d.className = 'none'; d.textContent = 'None in view. Add two curves that cross.'; box.append(d); return; }
+  pts.slice(0, 60).forEach(p => {
+    const d = document.createElement('div'); d.textContent = '(' + fmtPrecise(p[0]) + ', ' + fmtPrecise(p[1]) + ')'; box.append(d);
+  });
+  if (pts.length > 60) { const d = document.createElement('div'); d.className = 'none'; d.textContent = '+ ' + (pts.length - 60) + ' more'; box.append(d); }
+}
+
+function draw() {
+  needDraw = false;
+  const th = readTheme();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.direction = 'ltr';
+  ctx.fillStyle = th.plot; ctx.fillRect(0, 0, W, H);
+  const glow = ctx.createRadialGradient(0, H, 0, 0, H, Math.max(W, H) * 0.85);
+  glow.addColorStop(0, 'rgba(115,12,30,0.42)'); glow.addColorStop(1, 'rgba(115,12,30,0)');
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+  drawGrid(th);
+  rows.forEach(r => {
+    if (!r.visible || !r.parsed) return;
+    const p = r.parsed, col = th.c[r.color];
+    if (p.kind === 'empty' || p.kind === 'param') return;
+    ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 2.3; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    try {
+      if (p.kind === 'explicit') drawExplicit(p.f);
+      else if (p.kind === 'vertical') drawVertical(p.f);
+      else if (p.kind === 'polar') drawPolar(p.f);
+      else drawImplicit(p.F, p.kind === 'ineq' ? p.op : null, col);
+    } catch (e) { /* a broken row must not stop the others */ }
+  });
+  if (!interacting) {
+    let pts = [];
+    if (showInter) { try { pts = findIntersections(); } catch (e) { pts = []; } drawIntersections(th, pts); }
+    updateIntersectionList(pts);
+  }
+  drawHover(th);
+}
+
+function drawHover(th) {
+  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  octx.clearRect(0, 0, W, H);
+  if (!hover) return;
+  th = th || readTheme();
+  octx.direction = 'ltr';
+  const mx = hover.x, my = hover.y, wx = fromX(mx);
+  let best = null;
+  rows.forEach(r => {
+    if (!r.visible || !r.parsed || r.parsed.kind !== 'explicit') return;
+    const y = r.parsed.f(wx);
+    if (!isFinite(y)) return;
+    const py = toY(y), d = Math.abs(py - my);
+    if (d < 18 && (!best || d < best.d)) best = { d, py, y, color: th.c[r.color] };
+  });
+  if (!best) return;
+  octx.beginPath(); octx.arc(mx, best.py, 5.5, 0, Math.PI * 2);
+  octx.fillStyle = best.color; octx.fill();
+  octx.lineWidth = 2; octx.strokeStyle = th.plot; octx.stroke();
+  const txt = '(' + fmtNum(wx) + ', ' + fmtNum(best.y) + ')';
+  octx.font = '500 12px "IBM Plex Mono", ui-monospace, monospace';
+  const tw = octx.measureText(txt).width + 16, bh = 24;
+  let bx = mx + 12, by = best.py - bh - 10;
+  if (bx + tw > W - 8) bx = mx - tw - 12;
+  if (by < 8) by = best.py + 12;
+  octx.fillStyle = th.panel; octx.strokeStyle = best.color; octx.lineWidth = 1.5;
+  octx.beginPath(); octx.roundRect ? octx.roundRect(bx, by, tw, bh, 12) : octx.rect(bx, by, tw, bh);
+  octx.fill(); octx.stroke();
+  octx.fillStyle = th.fg; octx.textAlign = 'left'; octx.textBaseline = 'middle';
+  octx.fillText(txt, bx + 8, by + bh / 2 + 0.5);
+}
+
+/* ---------- sizing & interaction ---------- */
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  const w = board.clientWidth, h = board.clientHeight;
+  if (!w || !h) return;
+  W = w; H = h;
+  [cv, ov].forEach(c => { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); });
+  requestDraw();
+}
+new ResizeObserver(resize).observe(board);
+
+function zoomAt(px, py, f) {
+  const wx = fromX(px), wy = fromY(py);
+  view.s = clampN(view.s * f, 0.002, 2e7);
+  view.cx = wx - (px - W / 2) / view.s;
+  view.cy = wy + (py - H / 2) / view.s;
+  requestDraw(true);
+}
+const ptrs = new Map();
+let lastDist = 0, lastMid = null;
+const local = e => { const b = ov.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; };
+
+function setCoords(p) {
+  $('#coords').textContent = 'x = ' + fmtNum(fromX(p.x)) + '   y = ' + fmtNum(fromY(p.y));
+}
+ov.addEventListener('pointerdown', e => {
+  ov.setPointerCapture(e.pointerId);
+  ptrs.set(e.pointerId, local(e));
+  ov.classList.add('drag');
+  if (ptrs.size === 2) {
+    const [a, b] = [...ptrs.values()];
+    lastDist = Math.hypot(a.x - b.x, a.y - b.y); lastMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  }
+});
+ov.addEventListener('pointermove', e => {
+  const p = local(e);
+  if (ptrs.has(e.pointerId)) {
+    const prev = ptrs.get(e.pointerId);
+    ptrs.set(e.pointerId, p);
+    if (ptrs.size === 1) {
+      view.cx -= (p.x - prev.x) / view.s; view.cy += (p.y - prev.y) / view.s;
+      hover = null; requestDraw(true);
+    } else if (ptrs.size === 2) {
+      const [a, b] = [...ptrs.values()];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y), mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      view.cx -= (mid.x - lastMid.x) / view.s; view.cy += (mid.y - lastMid.y) / view.s;
+      if (lastDist > 0) zoomAt(mid.x, mid.y, dist / lastDist);
+      lastDist = dist; lastMid = mid;
+    }
+  } else if (e.pointerType === 'mouse') { hover = p; requestDraw(); }
+  setCoords(p);
+});
+const endPtr = e => { ptrs.delete(e.pointerId); if (!ptrs.size) ov.classList.remove('drag'); lastDist = 0; };
+ov.addEventListener('pointerup', endPtr);
+ov.addEventListener('pointercancel', endPtr);
+ov.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && !ptrs.size) { hover = null; requestDraw(); } });
+ov.addEventListener('wheel', e => {
+  e.preventDefault();
+  const p = local(e);
+  zoomAt(p.x, p.y, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)));
+}, { passive: false });
+ov.addEventListener('dblclick', e => { const p = local(e); zoomAt(p.x, p.y, 1.8); });
+
+$('#zin').onclick = () => zoomAt(W / 2, H / 2, 1.4);
+$('#zout').onclick = () => zoomAt(W / 2, H / 2, 1 / 1.4);
+$('#home').onclick = () => { view.cx = 0; view.cy = 0; view.s = 40; requestDraw(true); };
+$('#angle').onclick = () => {
+  const deg = angleK === 1; angleK = deg ? Math.PI / 180 : 1;
+  $('#angle').textContent = deg ? 'deg' : 'rad'; requestDraw(); save();
+};
+function syncXsec() { const b = $('#xsec'); b.classList.toggle('on', showInter); b.setAttribute('aria-pressed', String(showInter)); }
+$('#xsec').onclick = () => { showInter = !showInter; syncXsec(); lastPtKey = null; requestDraw(); save(); };
+
+/* ---------- quick input helpers ---------- */
+const keysEl = $('#keys');
+[['x','x'],['y','y'],['=','='],['^','^'],['(','('],[')',')'],['π','π'],['θ','θ'],['√','sqrt('],['sin','sin('],['cos','cos('],['tan','tan('],['|x|','abs('],['ln','ln('],['<','<'],['>','>'],['≤','<='],['≥','>=']].forEach(([lab, ins]) => {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = lab;
+  b.setAttribute('aria-label', 'Insert ' + lab);
+  b.addEventListener('pointerdown', e => e.preventDefault());
+  b.addEventListener('click', () => insertText(ins));
+  keysEl.append(b);
+});
+function insertText(txt) {
+  let inp = lastInput && document.body.contains(lastInput) ? lastInput : null;
+  if (!inp) { const all = list.querySelectorAll('input'); inp = all[all.length - 1]; }
+  if (!inp) return;
+  inp.focus();
+  const a = inp.selectionStart ?? inp.value.length, b = inp.selectionEnd ?? a;
+  inp.value = inp.value.slice(0, a) + txt + inp.value.slice(b);
+  inp.setSelectionRange(a + txt.length, a + txt.length);
+  inp.dispatchEvent(new Event('input', { bubbles: true }));
+}
+$('#addBtn').onclick = () => addRow('');
+
+/* ---------- storage (per-viewer convenience only) ---------- */
+const KEY = 'plotter.v3';
+let saveTimer = 0;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(KEY, JSON.stringify({
+        rows: rows.map(r => ({ text: r.text, color: r.color, visible: r.visible })),
+        params, ranges, deg: angleK !== 1, inter: showInter
+      }));
+    } catch (e) { /* storage unavailable */ }
+  }, 300);
+}
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (!d || !Array.isArray(d.rows) || !d.rows.length) return false;
+    Object.assign(params, d.params || {}); Object.assign(ranges, d.ranges || {});
+    rows = d.rows.slice(0, 40).map(x => { const r = mkRow(String(x.text || ''), (x.color | 0) % 6); r.visible = x.visible !== false; return r; });
+    if (d.deg) { angleK = Math.PI / 180; $('#angle').textContent = 'deg'; }
+    if (d.inter === false) showInter = false;
+    return true;
+  } catch (e) { return false; }
+}
+
+/* ---------- start ---------- */
+if (!load()) rows = [mkRow('', 0)];
+rows.forEach(analyzeRow);
+syncXsec();
+renderRows(); renderParams(); resize(); requestDraw();
+
+const redraw = () => requestDraw();
+try { document.fonts.ready.then(redraw); } catch (e) {}
+})();
+</script>
+
+</body>
+</html>
